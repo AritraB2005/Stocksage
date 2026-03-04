@@ -165,42 +165,135 @@ export default function App() {
     }
   }
 
-  async function callGroq(prompt) {
+  async function callGroq(prompt, retries = 3) {
     const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
     if (!GROQ_API_KEY || GROQ_API_KEY === "YOUR_GROQ_KEY_HERE") {
       return "WARNING: Please add your Groq API key in .env file. Get one free at console.groq.com";
     }
-    try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            {
-              role: "system",
-              content: "You are a senior equity research analyst and portfolio manager with 20 years of experience at a top-tier investment bank. Provide detailed, data-rich, professional stock and sector analysis. Use specific metrics, real company data, price levels, margins, and financial ratios. Write in clean paragraphs with CAPITALIZED section labels. No markdown symbols like ** or ## or *."
-            },
-            { role: "user", content: prompt }
-          ],
-          max_tokens: 1024,
-          temperature: 0.7
-        })
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        return `API Error: ${err.error?.message || "Status " + response.status}`;
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            messages: [
+              {
+                role: "system",
+                content: `You are a senior equity research analyst. Output CONCISE, data-rich analysis using ONLY these formats:
+
+For key numbers use: METRIC: Label | Value | Change
+For comparisons use: TABLE: Header1 | Header2 | Header3 \\n Row1Col1 | Row1Col2 | Row1Col3
+For important points use: BULLET: text here
+For signals use: SIGNAL: BULLISH/BEARISH/NEUTRAL | Reason text
+For short labels use: TAG: Label
+
+Keep responses SHORT and STRUCTURED. No long paragraphs. Maximum 8-10 lines per section. Focus only on the most critical, actionable data points. Use real numbers and specific price levels.`
+              },
+              { role: "user", content: prompt }
+            ],
+            max_tokens: 800,
+            temperature: 0.6
+          })
+        });
+        if (response.status === 429) {
+          // Rate limited — wait and retry
+          const wait = (attempt + 1) * 5000;
+          console.warn(`Rate limited. Waiting ${wait / 1000}s before retry ${attempt + 1}/${retries}...`);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        if (!response.ok) {
+          const err = await response.json();
+          return `API Error: ${err.error?.message || "Status " + response.status}`;
+        }
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) return "No response from Groq. Please try again.";
+        return text.replace(/#{1,3}\s/g, "").trim();
+      } catch (err) {
+        if (attempt === retries - 1) return `Network error: ${err.message}. Check your internet connection.`;
+        await new Promise(r => setTimeout(r, 3000));
       }
-      const data = await response.json();
-      const text = data.choices?.[0]?.message?.content;
-      if (!text) return "No response from Groq. Please try again.";
-      return text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#+\s/g, "").trim();
-    } catch (err) {
-      return `Network error: ${err.message}. Check your internet connection.`;
     }
+    return "Rate limit reached. Please wait a minute and try again.";
+  }
+
+  // Parse structured AI output into rich JSX elements
+  function parseStructuredOutput(text) {
+    if (!text) return null;
+    const lines = text.split('\n').filter(l => l.trim());
+    const elements = [];
+    let tableBuffer = null;
+
+    function flushTable() {
+      if (tableBuffer && tableBuffer.rows.length > 0) {
+        elements.push(
+          <div key={`tbl-${elements.length}`} className="rich-table-wrap">
+            <table className="rich-table">
+              <thead><tr>{tableBuffer.headers.map((h, i) => <th key={i}>{h.trim()}</th>)}</tr></thead>
+              <tbody>{tableBuffer.rows.map((row, ri) => <tr key={ri}>{row.map((c, ci) => <td key={ci}>{c.trim()}</td>)}</tr>)}</tbody>
+            </table>
+          </div>
+        );
+        tableBuffer = null;
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      if (line.startsWith('METRIC:')) {
+        flushTable();
+        const parts = line.slice(7).split('|').map(p => p.trim());
+        const [label, value, change] = parts;
+        const isUp = change && (change.startsWith('+') || change.includes('up') || change.includes('▲'));
+        const isDown = change && (change.startsWith('-') || change.includes('down') || change.includes('▼'));
+        elements.push(
+          <div key={`m-${i}`} className="rich-metric">
+            <div className="rm-label">{label || ''}</div>
+            <div className="rm-value">{value || ''}</div>
+            {change && <div className={`rm-change ${isUp ? 'up' : isDown ? 'down' : ''}`}>{change}</div>}
+          </div>
+        );
+      } else if (line.startsWith('TABLE:')) {
+        flushTable();
+        const headers = line.slice(6).split('|').map(p => p.trim());
+        tableBuffer = { headers, rows: [] };
+      } else if (tableBuffer && line.includes('|')) {
+        tableBuffer.rows.push(line.split('|').map(p => p.trim()));
+      } else if (line.startsWith('BULLET:') || line.startsWith('- ') || line.startsWith('• ')) {
+        flushTable();
+        const text = line.replace(/^(BULLET:|[•-]\s*)/, '').trim();
+        elements.push(
+          <div key={`b-${i}`} className="rich-bullet"><span className="rb-dot">▸</span>{text}</div>
+        );
+      } else if (line.startsWith('SIGNAL:')) {
+        flushTable();
+        const parts = line.slice(7).split('|').map(p => p.trim());
+        const [signal, reason] = parts;
+        const cls = signal?.includes('BULL') ? 'sig-bull' : signal?.includes('BEAR') ? 'sig-bear' : 'sig-neutral';
+        elements.push(
+          <div key={`s-${i}`} className={`rich-signal ${cls}`}>
+            <span className="rs-badge">{signal || 'NEUTRAL'}</span>
+            {reason && <span className="rs-reason">{reason}</span>}
+          </div>
+        );
+      } else if (line.startsWith('TAG:')) {
+        flushTable();
+        elements.push(<span key={`t-${i}`} className="rich-tag">{line.slice(4).trim()}</span>);
+      } else {
+        flushTable();
+        // plain text line — check for bold markers
+        const processed = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+        elements.push(<div key={`p-${i}`} className="rich-text" dangerouslySetInnerHTML={{ __html: processed }} />);
+      }
+    }
+    flushTable();
+    return elements.length > 0 ? elements : <div className="rich-text">{text}</div>;
   }
 
   function getSectionPrompt(section, q, type, live) {
@@ -280,14 +373,14 @@ LIVE MARKET DATA (use these EXACT numbers in your analysis):
         const prompt = getSectionPrompt(SECTIONS[i], query.trim(), queryType, live);
         results[SECTIONS[i]] = await callGroq(prompt);
         if (i < SECTIONS.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 4000));
         }
       }
 
       // PHASE 2: Alpha Score (quantitative rubric)
       setActiveSection(SECTIONS.length);
       setProgress(((SECTIONS.length + 1) / totalSteps) * 100);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 4000));
       const alphaPrompt = queryType === "stock"
         ? `You are a quantitative analyst. Score the stock ${query.trim()} across these 5 factors. ${live ? `Current price: ${live.price}, 52W High: ${live.high52}, 52W Low: ${live.low52}, SMA20: ${live.sma20}.` : ''}
 Return ONLY a valid JSON object with no extra text, like this exact format:
@@ -305,7 +398,7 @@ Each score must be 0-100. Rating must be one of: STRONG BUY, BUY, HOLD, SELL, ST
       // PHASE 3: News Sentiment
       setActiveSection(SECTIONS.length + 1);
       setProgress(((SECTIONS.length + 2) / totalSteps) * 100);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 4000));
       const sentimentPrompt = `Analyze the current market sentiment for ${queryType === "stock" ? `stock ${query.trim()}` : `the ${query.trim()} sector`}. ${live ? `It is currently trading at ${live.price} (${live.changePct}% change).` : ''}
 Consider recent news, earnings, macro trends, and market conditions.
 Return ONLY a valid JSON object: {"sentiment":"BULLISH","confidence":75,"catalysts":["Catalyst 1","Catalyst 2","Catalyst 3"],"risks":["Risk 1","Risk 2"],"newsScore":72}
@@ -793,6 +886,96 @@ sentiment must be one of: VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH.
         .sent-list li { font-size: 12px; color: #B2B5BE; padding: 3px 0; font-family: 'Inter', sans-serif; }
         .sent-list li::before { content: '▸ '; color: #787B86; }
 
+        /* Rich Structured Output */
+        .rich-metric {
+          display: inline-flex;
+          flex-direction: column;
+          background: #1E222D;
+          border: 1px solid #2A2E39;
+          padding: 8px 14px;
+          margin: 4px 6px 4px 0;
+          min-width: 120px;
+        }
+        .rm-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #787B86; text-transform: uppercase; letter-spacing: 0.5px; }
+        .rm-value { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; color: #E0E3EA; margin: 2px 0; }
+        .rm-change { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #787B86; }
+        .rm-change.up { color: #00C853; }
+        .rm-change.down { color: #D50000; }
+
+        .rich-table-wrap { overflow-x: auto; margin: 8px 0; }
+        .rich-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+        }
+        .rich-table th {
+          background: #1E222D;
+          color: #2962FF;
+          text-transform: uppercase;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          padding: 8px 12px;
+          text-align: left;
+          border-bottom: 2px solid #2A2E39;
+        }
+        .rich-table td {
+          padding: 7px 12px;
+          color: #B2B5BE;
+          border-bottom: 1px solid #1E222D;
+        }
+        .rich-table tr:hover td { background: rgba(41,98,255,0.05); }
+
+        .rich-bullet {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          padding: 4px 0;
+          font-size: 12px;
+          color: #B2B5BE;
+          line-height: 1.5;
+        }
+        .rb-dot { color: #2962FF; font-size: 10px; margin-top: 3px; flex-shrink: 0; }
+
+        .rich-signal {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 12px;
+          margin: 6px 0;
+          border-left: 3px solid;
+        }
+        .sig-bull { border-color: #00C853; background: rgba(0,200,83,0.05); }
+        .sig-bear { border-color: #D50000; background: rgba(213,0,0,0.05); }
+        .sig-neutral { border-color: #FFD600; background: rgba(255,214,0,0.05); }
+        .rs-badge {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 1px;
+          padding: 2px 8px;
+          flex-shrink: 0;
+        }
+        .sig-bull .rs-badge { color: #00C853; background: rgba(0,200,83,0.15); }
+        .sig-bear .rs-badge { color: #D50000; background: rgba(213,0,0,0.15); }
+        .sig-neutral .rs-badge { color: #FFD600; background: rgba(255,214,0,0.15); }
+        .rs-reason { font-size: 12px; color: #B2B5BE; }
+
+        .rich-tag {
+          display: inline-block;
+          background: rgba(41,98,255,0.1);
+          border: 1px solid rgba(41,98,255,0.2);
+          color: #2962FF;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 700;
+          padding: 2px 8px;
+          margin: 2px 4px 2px 0;
+        }
+
+        .rich-text { font-size: 12px; color: #B2B5BE; line-height: 1.6; padding: 2px 0; }
+        .rich-text strong { color: #E0E3EA; font-weight: 700; }
+
       `}</style>
 
       {/* Top Application Bar */}
@@ -1060,7 +1243,7 @@ sentiment must be one of: VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH.
                       {section}
                     </div>
                     <div className="dc-body">
-                      {analysisData[section] || "NO_DATA"}
+                      {analysisData[section] ? parseStructuredOutput(analysisData[section]) : "NO_DATA"}
                     </div>
                   </div>
                 ))}
