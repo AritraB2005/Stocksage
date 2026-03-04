@@ -121,60 +121,72 @@ export default function App() {
     }
   }, [loading, analysisData]);
 
-  async function fetchSectionAnalysis(section, q, type) {
-    const systemPrompt = `You are a strictly professional financial terminal logic unit (like Bloomberg or Koyfin). Provide dense, factual, data-driven analysis for the queried asset. Use real metrics, critical resistance/support levels, percentages, margins, and industry comparisons. Format precisely using brief bullet points. NO conversational filler. NO asterisks (**) or hashes (##) for markdown. Use CAPITALIZED headings if needed. Output pure data-dense professional text.`;
+  async function callGroq(prompt) {
+    const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+    if (!GROQ_API_KEY || GROQ_API_KEY === "YOUR_GROQ_KEY_HERE") {
+      return "WARNING: Please add your Groq API key in .env file. Get one free at console.groq.com";
+    }
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content: "You are a senior equity research analyst and portfolio manager with 20 years of experience at a top-tier investment bank. Provide detailed, data-rich, professional stock and sector analysis. Use specific metrics, real company data, price levels, margins, and financial ratios. Write in clean paragraphs with CAPITALIZED section labels. No markdown symbols like ** or ## or *."
+            },
+            { role: "user", content: prompt }
+          ],
+          max_tokens: 1024,
+          temperature: 0.7
+        })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        return `API Error: ${err.error?.message || "Status " + response.status}`;
+      }
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) return "No response from Groq. Please try again.";
+      return text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#+\s/g, "").trim();
+    } catch (err) {
+      return `Network error: ${err.message}. Check your internet connection.`;
+    }
+  }
 
+  function getSectionPrompt(section, q, type) {
     const prompts = {
       "Company Overview": type === "stock"
-        ? `Execute structural overview query for ${q}. Outline: core business segments (w/ approx rev %), 3 main growth drivers, geographic revenue breakdown, notable recent M&A, executive leadership profile, and 2 critical recent developments.`
-        : `Execute sector overview query for ${q}. Outline: macroeconomic definition, primary sub-segments, estimated total addressable market (TAM), current lifecycle maturity, and structural macro headwinds/tailwinds.`,
-
+        ? `Execute structural overview for ${q}. Cover: core business segments with approx revenue %, 3 main growth drivers, geographic revenue breakdown, notable recent M&A, executive leadership, and 2 critical recent developments.`
+        : `Execute sector overview for ${q}. Cover: macroeconomic definition, primary sub-segments, estimated TAM, current lifecycle maturity, and structural macro headwinds/tailwinds.`,
       "Market Cap & Valuation": type === "stock"
-        ? `Execute valuation query for ${q}. List: Enterprise Value, Trailing P/E vs Forward P/E vs industry median, EV/EBITDA, Price/Sales, Price/Book, Free Cash Flow yield, and current Dividend Yield. State if trading at historical premium/discount.`
-        : `Execute valuation query for ${q} sector. List: aggregate sector P/E vs S&P 500, historical 10-year valuation bands, and identify specific sub-sectors offering relative value discounts.`,
-
+        ? `Execute valuation analysis for ${q}. List: Enterprise Value, Trailing P/E vs Forward P/E vs industry median, EV/EBITDA, Price/Sales, Price/Book, FCF yield, Dividend Yield. State if trading at historical premium/discount.`
+        : `Execute valuation analysis for ${q} sector. List: aggregate sector P/E vs S&P 500, historical 10-year valuation bands, sub-sectors offering relative value.`,
       "Technical Analysis": type === "stock"
-        ? `Execute tech-analysis query for ${q} daily/weekly charts. Detail: primary trend classification, 3 precise support/resistance price zones, SMA-50 and SMA-200 interaction status, 14-day RSI (momentum), MACD state, and identified chart pattern formations.`
-        : `Execute tech-analysis query for ${q} sector ETF/Index. Detail: relative strength versus SPY, primary trend, critical support/resistance boundaries, and breadth/momentum indicators.`,
-
+        ? `Execute technical analysis for ${q}. Detail: primary trend, 3 key support/resistance zones, SMA-50 vs SMA-200 status, 14-day RSI, MACD state, and identified chart patterns.`
+        : `Execute technical analysis for ${q} sector ETF/Index. Detail: relative strength vs SPY, primary trend, critical support/resistance levels, breadth indicators.`,
       "Entry Price Strategy": type === "stock"
-        ? `Compute entry strategy for ${q}. Define: optimal "buy zone" price range, conservative entry tier, aggressive breakout trigger, hard stop-loss invalidation level, and estimated Risk/Reward ratio parameters.`
-        : `Compute macro allocation strategy for ${q} sector. Suggest: Overweight/Underweight stance, optimal macro conditions for entry, rotation timing markers, and downside risk threshold variables.`,
-
+        ? `Compute entry strategy for ${q}. Define: optimal buy zone range, conservative entry tier, aggressive breakout trigger, stop-loss level, and Risk/Reward ratio.`
+        : `Compute allocation strategy for ${q} sector. Suggest: OW/UW stance, optimal macro conditions for entry, rotation timing markers, downside risk threshold.`,
       "Peer Comparison": type === "stock"
-        ? `Execute peer-comp query for ${q}. Compare against top 3-4 largest pure-play competitors. Compare metrics: Operating Margins, 3-year Revenue CAGR, ROIC, Debt-to-Equity. Identify exact economic moat advantages or relative weaknesses.`
-        : `Execute peer-comp query for ${q} sector. Rank top 5 mega-cap constituents. Identify current disruptors taking share from incumbents, market concentration ratio, and M&A consolidation probability.`,
-
+        ? `Execute peer comparison for ${q}. Compare top 3-4 competitors on: Operating Margins, 3yr Revenue CAGR, ROIC, Debt/Equity. Identify economic moat advantages or weaknesses.`
+        : `Execute peer comparison for ${q} sector. Rank top 5 mega-caps. Identify disruptors, market concentration, and M&A consolidation probability.`,
       "Sector Analysis": type === "stock"
-        ? `Execute macro environment query for ${q}. Analyze: current business cycle position (early/mid/late), sector YTD relative performance, regulatory threats, supply chain status, and specific macro factors acting as margin constraints.`
-        : `Deep dive macro drivers for ${q} sector. Analyze: sensitivity coefficients to interest rates and inflation YoY, commodity input costs, geopolitical exposure matrix, and 5-year secular CAGR forecast.`,
-
+        ? `Execute macro environment analysis for ${q}. Cover: business cycle position, sector YTD performance, regulatory threats, supply chain status, macro margin constraints.`
+        : `Deep dive macro drivers for ${q} sector. Cover: rate/inflation sensitivity, commodity input costs, geopolitical exposure, 5-year secular CAGR forecast.`,
       "Risk Assessment": type === "stock"
-        ? `Execute risk matrix query for ${q}. Categorize: 1. Operational/Execution risk, 2. Financial/Liquidity risk, 3. Competitive risk, 4. Macro/Regulatory risk. Assign severity rating (LOW/MED/HIGH) to each and output aggregated risk premium.`
-        : `Execute systemic risk query for ${q} sector. Detail: cyclical demand destruction probability, legislative/antitrust overhangs, labor/wage input pressures, and FX risk. Output overall sector risk classification.`,
-
+        ? `Execute risk matrix for ${q}. Categorize: 1) Operational risk, 2) Financial/Liquidity risk, 3) Competitive risk, 4) Macro/Regulatory risk. Assign LOW/MED/HIGH severity to each.`
+        : `Execute systemic risk analysis for ${q} sector. Cover: cyclical demand risk, legislative overhangs, labor pressures, FX risk. Output overall risk classification.`,
       "Investment Verdict": type === "stock"
-        ? `Synthesize final verdict on ${q}. Output official rating (STRONG BUY / BUY / HOLD / SELL / STRONG SELL). Provide 12-month base-case price target with upside/downside %. List minimum 3 near-term binary catalysts. Conclude with single-sentence thesis.`
-        : `Synthesize final verdict on ${q} sector. Output target tactical weight (OVERWEIGHT / MARKET WEIGHT / UNDERWEIGHT). Provide 12-month outlook bias. List top 2 pure-play stock vehicles to capture the thesis. Summarize core rationale.`,
+        ? `Synthesize verdict on ${q}. Output: rating (STRONG BUY/BUY/HOLD/SELL/STRONG SELL), 12-month price target with upside/downside %, 3 near-term catalysts, single-sentence thesis.`
+        : `Synthesize verdict on ${q} sector. Output: tactical weight (OVERWEIGHT/MARKET WEIGHT/UNDERWEIGHT), 12-month outlook, top 2 pure-play stocks, core rationale.`,
     };
-
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: `${systemPrompt}\n\n${prompts[section] || `Query logic for ${section} on ${q}`}` }],
-            },
-          ],
-        }),
-      }
-    );
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "NO_DATA_AVAILABLE";
+    return prompts[section] || `Provide analysis for ${section} on ${q}`;
   }
 
   async function handleAnalyze() {
@@ -190,16 +202,22 @@ export default function App() {
       for (let i = 0; i < SECTIONS.length; i++) {
         setActiveSection(i);
         setProgress(((i) / SECTIONS.length) * 100);
-        results[SECTIONS[i]] = await fetchSectionAnalysis(SECTIONS[i], query.trim(), queryType);
+        const prompt = getSectionPrompt(SECTIONS[i], query.trim(), queryType);
+        results[SECTIONS[i]] = await callGroq(prompt);
+        // 2-second delay between calls to avoid rate limits
+        if (i < SECTIONS.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
-      setAnalysisData(results);
+      setActiveSection(SECTIONS.length);
       setProgress(100);
+      setAnalysisData(results);
     } catch (e) {
-      setError("ERR_NETWORK_FAILURE: Connection to quant inference engine lost. " + e.message);
+      setError("ERR_SYS_FAILURE: " + e.message);
     } finally {
       setTimeout(() => {
         setLoading(false);
-      }, 300);
+      }, 500);
     }
   }
 
