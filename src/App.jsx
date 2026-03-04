@@ -105,6 +105,9 @@ export default function App() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [liveData, setLiveData] = useState(null);
+  const [alphaScore, setAlphaScore] = useState(null);
+  const [sentiment, setSentiment] = useState(null);
 
   // Time tracking for terminal UI
   const [time, setTime] = useState(new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC');
@@ -120,6 +123,47 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [loading, analysisData]);
+
+  // --- RAG: Fetch live financial data from Yahoo Finance ---
+  async function fetchLiveStockData(ticker) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`;
+      const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxy);
+      if (!res.ok) return null;
+      const json = await res.json();
+      const meta = json?.chart?.result?.[0]?.meta;
+      const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+      if (!meta) return null;
+      const price = meta.regularMarketPrice || 0;
+      const prevClose = meta.chartPreviousClose || meta.previousClose || price;
+      const change = price - prevClose;
+      const changePct = prevClose ? ((change / prevClose) * 100).toFixed(2) : 0;
+      const high52 = meta.fiftyTwoWeekHigh || 0;
+      const low52 = meta.fiftyTwoWeekLow || 0;
+      const validCloses = closes.filter(c => c !== null);
+      const vol = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.volume;
+      const lastVol = vol ? vol[vol.length - 1] : 0;
+      return {
+        symbol: meta.symbol,
+        price: price.toFixed(2),
+        change: change.toFixed(2),
+        changePct,
+        high52: high52.toFixed(2),
+        low52: low52.toFixed(2),
+        currency: meta.currency || "USD",
+        exchange: meta.exchangeName || "N/A",
+        volume: lastVol,
+        marketState: meta.marketState || "REGULAR",
+        closes: validCloses.slice(-20),
+        sma20: validCloses.length >= 20 ? (validCloses.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2) : null,
+        sma5: validCloses.length >= 5 ? (validCloses.slice(-5).reduce((a, b) => a + b, 0) / 5).toFixed(2) : null,
+      };
+    } catch (e) {
+      console.warn("Live data fetch failed:", e);
+      return null;
+    }
+  }
 
   async function callGroq(prompt) {
     const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
@@ -159,31 +203,47 @@ export default function App() {
     }
   }
 
-  function getSectionPrompt(section, q, type) {
+  function getSectionPrompt(section, q, type, live) {
+    // Build a live data injection block if available (RAG)
+    const dataBlock = live ? `
+LIVE MARKET DATA (use these EXACT numbers in your analysis):
+- Symbol: ${live.symbol}
+- Current Price: ${live.currency} ${live.price}
+- Change: ${live.change} (${live.changePct}%)
+- 52-Week High: ${live.high52}
+- 52-Week Low: ${live.low52}
+- Exchange: ${live.exchange}
+- Volume: ${live.volume ? live.volume.toLocaleString() : 'N/A'}
+- SMA-20: ${live.sma20 || 'N/A'}
+- SMA-5: ${live.sma5 || 'N/A'}
+- Market State: ${live.marketState}
+- Last 20 Daily Closes: [${live.closes.map(c => c.toFixed(2)).join(', ')}]
+` : '';
+
     const prompts = {
       "Company Overview": type === "stock"
-        ? `Execute structural overview for ${q}. Cover: core business segments with approx revenue %, 3 main growth drivers, geographic revenue breakdown, notable recent M&A, executive leadership, and 2 critical recent developments.`
+        ? `${dataBlock}Execute structural overview for ${q}. Cover: core business segments with approx revenue %, 3 main growth drivers, geographic revenue breakdown, notable recent M&A, executive leadership, and 2 critical recent developments.`
         : `Execute sector overview for ${q}. Cover: macroeconomic definition, primary sub-segments, estimated TAM, current lifecycle maturity, and structural macro headwinds/tailwinds.`,
       "Market Cap & Valuation": type === "stock"
-        ? `Execute valuation analysis for ${q}. List: Enterprise Value, Trailing P/E vs Forward P/E vs industry median, EV/EBITDA, Price/Sales, Price/Book, FCF yield, Dividend Yield. State if trading at historical premium/discount.`
+        ? `${dataBlock}Execute valuation analysis for ${q}. Use the LIVE price data provided. List: Enterprise Value, Trailing P/E vs Forward P/E vs industry median, EV/EBITDA, Price/Sales, Price/Book, FCF yield, Dividend Yield. State if trading at historical premium/discount based on the current price of ${live?.price || 'unknown'}.`
         : `Execute valuation analysis for ${q} sector. List: aggregate sector P/E vs S&P 500, historical 10-year valuation bands, sub-sectors offering relative value.`,
       "Technical Analysis": type === "stock"
-        ? `Execute technical analysis for ${q}. Detail: primary trend, 3 key support/resistance zones, SMA-50 vs SMA-200 status, 14-day RSI, MACD state, and identified chart patterns.`
+        ? `${dataBlock}Execute technical analysis for ${q}. Use the LIVE price data and SMA values provided above. Detail: primary trend based on SMA-5 vs SMA-20 crossover, 3 key support/resistance zones based on recent closes, RSI estimate from the closing data pattern, MACD state, and identified chart patterns. Price is currently ${live?.price || 'unknown'}.`
         : `Execute technical analysis for ${q} sector ETF/Index. Detail: relative strength vs SPY, primary trend, critical support/resistance levels, breadth indicators.`,
       "Entry Price Strategy": type === "stock"
-        ? `Compute entry strategy for ${q}. Define: optimal buy zone range, conservative entry tier, aggressive breakout trigger, stop-loss level, and Risk/Reward ratio.`
+        ? `${dataBlock}Compute entry strategy for ${q}. Current price is ${live?.price || 'unknown'}, 52W High is ${live?.high52 || 'unknown'}, 52W Low is ${live?.low52 || 'unknown'}. Define: optimal buy zone range, conservative entry tier, aggressive breakout trigger, stop-loss level, and Risk/Reward ratio. Use EXACT price levels.`
         : `Compute allocation strategy for ${q} sector. Suggest: OW/UW stance, optimal macro conditions for entry, rotation timing markers, downside risk threshold.`,
       "Peer Comparison": type === "stock"
-        ? `Execute peer comparison for ${q}. Compare top 3-4 competitors on: Operating Margins, 3yr Revenue CAGR, ROIC, Debt/Equity. Identify economic moat advantages or weaknesses.`
+        ? `${dataBlock}Execute peer comparison for ${q}. Compare top 3-4 competitors on: Operating Margins, 3yr Revenue CAGR, ROIC, Debt/Equity. Reference ${q}'s live price of ${live?.price || 'unknown'} for relative valuation context.`
         : `Execute peer comparison for ${q} sector. Rank top 5 mega-caps. Identify disruptors, market concentration, and M&A consolidation probability.`,
       "Sector Analysis": type === "stock"
-        ? `Execute macro environment analysis for ${q}. Cover: business cycle position, sector YTD performance, regulatory threats, supply chain status, macro margin constraints.`
+        ? `${dataBlock}Execute macro environment analysis for ${q}. Cover: business cycle position, sector YTD performance, regulatory threats, supply chain status, macro margin constraints.`
         : `Deep dive macro drivers for ${q} sector. Cover: rate/inflation sensitivity, commodity input costs, geopolitical exposure, 5-year secular CAGR forecast.`,
       "Risk Assessment": type === "stock"
-        ? `Execute risk matrix for ${q}. Categorize: 1) Operational risk, 2) Financial/Liquidity risk, 3) Competitive risk, 4) Macro/Regulatory risk. Assign LOW/MED/HIGH severity to each.`
+        ? `${dataBlock}Execute risk matrix for ${q}. Current price ${live?.price || 'unknown'} vs 52W range ${live?.low52 || '?'}-${live?.high52 || '?'}. Categorize: 1) Operational risk, 2) Financial/Liquidity risk, 3) Competitive risk, 4) Macro/Regulatory risk. Assign LOW/MED/HIGH severity to each.`
         : `Execute systemic risk analysis for ${q} sector. Cover: cyclical demand risk, legislative overhangs, labor pressures, FX risk. Output overall risk classification.`,
       "Investment Verdict": type === "stock"
-        ? `Synthesize verdict on ${q}. Output: rating (STRONG BUY/BUY/HOLD/SELL/STRONG SELL), 12-month price target with upside/downside %, 3 near-term catalysts, single-sentence thesis.`
+        ? `${dataBlock}Synthesize verdict on ${q}. Current price: ${live?.price || 'unknown'}. Output: rating (STRONG BUY/BUY/HOLD/SELL/STRONG SELL), 12-month price target with upside/downside % from current price, 3 near-term catalysts, single-sentence thesis.`
         : `Synthesize verdict on ${q} sector. Output: tactical weight (OVERWEIGHT/MARKET WEIGHT/UNDERWEIGHT), 12-month outlook, top 2 pure-play stocks, core rationale.`,
     };
     return prompts[section] || `Provide analysis for ${section} on ${q}`;
@@ -194,22 +254,71 @@ export default function App() {
     setError("");
     setLoading(true);
     setAnalysisData(null);
+    setAlphaScore(null);
+    setSentiment(null);
+    setLiveData(null);
     setActiveSection(0);
     setProgress(0);
 
+    const totalSteps = SECTIONS.length + 3; // +1 live data, +1 alpha, +1 sentiment
+
     try {
+      // PHASE 0: Fetch live market data (RAG)
+      let live = null;
+      if (queryType === "stock") {
+        setProgress(2);
+        live = await fetchLiveStockData(query.trim());
+        setLiveData(live);
+      }
+      setProgress((1 / totalSteps) * 100);
+
+      // PHASE 1: Run all 8 section analyses with live data injection
       const results = {};
       for (let i = 0; i < SECTIONS.length; i++) {
         setActiveSection(i);
-        setProgress(((i) / SECTIONS.length) * 100);
-        const prompt = getSectionPrompt(SECTIONS[i], query.trim(), queryType);
+        setProgress(((i + 1) / totalSteps) * 100);
+        const prompt = getSectionPrompt(SECTIONS[i], query.trim(), queryType, live);
         results[SECTIONS[i]] = await callGroq(prompt);
-        // 2-second delay between calls to avoid rate limits
         if (i < SECTIONS.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
+
+      // PHASE 2: Alpha Score (quantitative rubric)
       setActiveSection(SECTIONS.length);
+      setProgress(((SECTIONS.length + 1) / totalSteps) * 100);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const alphaPrompt = queryType === "stock"
+        ? `You are a quantitative analyst. Score the stock ${query.trim()} across these 5 factors. ${live ? `Current price: ${live.price}, 52W High: ${live.high52}, 52W Low: ${live.low52}, SMA20: ${live.sma20}.` : ''}
+Return ONLY a valid JSON object with no extra text, like this exact format:
+{"value":72,"growth":65,"momentum":80,"profitability":58,"risk":45,"overall":64,"rating":"BUY","target":"250.00","summary":"One sentence thesis"}
+Each score must be 0-100. Rating must be one of: STRONG BUY, BUY, HOLD, SELL, STRONG SELL. Target is 12-month price target.`
+        : `Score the ${query.trim()} sector across 5 factors. Return ONLY valid JSON: {"value":70,"growth":65,"momentum":60,"profitability":55,"risk":40,"overall":58,"rating":"OVERWEIGHT","target":"N/A","summary":"One sentence thesis"}`;
+      try {
+        const alphaRaw = await callGroq(alphaPrompt);
+        const jsonMatch = alphaRaw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          setAlphaScore(JSON.parse(jsonMatch[0]));
+        }
+      } catch (e) { console.warn("Alpha score parse failed", e); }
+
+      // PHASE 3: News Sentiment
+      setActiveSection(SECTIONS.length + 1);
+      setProgress(((SECTIONS.length + 2) / totalSteps) * 100);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const sentimentPrompt = `Analyze the current market sentiment for ${queryType === "stock" ? `stock ${query.trim()}` : `the ${query.trim()} sector`}. ${live ? `It is currently trading at ${live.price} (${live.changePct}% change).` : ''}
+Consider recent news, earnings, macro trends, and market conditions.
+Return ONLY a valid JSON object: {"sentiment":"BULLISH","confidence":75,"catalysts":["Catalyst 1","Catalyst 2","Catalyst 3"],"risks":["Risk 1","Risk 2"],"newsScore":72}
+sentiment must be one of: VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH. confidence and newsScore are 0-100.`;
+      try {
+        const sentRaw = await callGroq(sentimentPrompt);
+        const jsonM = sentRaw.match(/\{[\s\S]*\}/);
+        if (jsonM) {
+          setSentiment(JSON.parse(jsonM[0]));
+        }
+      } catch (e) { console.warn("Sentiment parse failed", e); }
+
+      setActiveSection(totalSteps);
       setProgress(100);
       setAnalysisData(results);
     } catch (e) {
@@ -577,6 +686,113 @@ export default function App() {
         .btn-export:hover:not(:disabled) { border-color: #2962FF; color: #2962FF; background: rgba(41,98,255,0.05); }
         .btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        /* Live Data Banner */
+        .live-banner {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 12px;
+          padding: 16px;
+          background: #131722;
+          border-bottom: 1px solid #2A2E39;
+        }
+        .live-item {
+          padding: 10px 12px;
+          background: #1E222D;
+          border: 1px solid #2A2E39;
+          font-family: 'JetBrains Mono', monospace;
+        }
+        .live-label { font-size: 9px; color: #787B86; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .live-value { font-size: 16px; font-weight: 700; color: #E0E3EA; }
+        .live-change { font-size: 11px; margin-top: 2px; }
+        .live-change.up { color: #00C853; }
+        .live-change.down { color: #D50000; }
+
+        /* Alpha Score + Sentiment Row */
+        .score-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          padding: 16px;
+        }
+        @media (max-width: 900px) { .score-row { grid-template-columns: 1fr; } }
+
+        .alpha-card, .sentiment-card {
+          background: #131722;
+          border: 1px solid #2A2E39;
+          padding: 20px;
+        }
+        .score-title {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+          font-weight: 700;
+          color: #787B86;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          margin-bottom: 16px;
+          border-bottom: 1px solid #2A2E39;
+          padding-bottom: 8px;
+        }
+
+        /* SVG Ring */
+        .ring-container { display: flex; align-items: center; gap: 24px; }
+        .score-ring { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+        .score-ring svg { transform: rotate(-90deg); }
+        .ring-bg { fill: none; stroke: #1E222D; stroke-width: 8; }
+        .ring-fill { fill: none; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 1s ease-out; }
+        .ring-text {
+          position: absolute;
+          top: 50%; left: 50%;
+          transform: translate(-50%, -50%);
+          font-family: 'JetBrains Mono', monospace;
+          text-align: center;
+        }
+        .ring-number { font-size: 28px; font-weight: 800; color: #E0E3EA; display: block; }
+        .ring-label { font-size: 9px; color: #787B86; text-transform: uppercase; }
+
+        .alpha-details { flex: 1; }
+        .alpha-rating {
+          display: inline-block;
+          padding: 4px 10px;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 1px;
+          margin-bottom: 12px;
+        }
+        .rating-buy { background: rgba(0,200,83,0.15); color: #00C853; border: 1px solid rgba(0,200,83,0.3); }
+        .rating-hold { background: rgba(255,214,0,0.15); color: #FFD600; border: 1px solid rgba(255,214,0,0.3); }
+        .rating-sell { background: rgba(213,0,0,0.15); color: #D50000; border: 1px solid rgba(213,0,0,0.3); }
+        .alpha-target { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #B2B5BE; margin-bottom: 12px; }
+        .alpha-summary { font-size: 13px; color: #B2B5BE; line-height: 1.5; }
+
+        .factor-bars { margin-top: 16px; }
+        .factor-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+        .factor-name { width: 90px; color: #787B86; text-transform: uppercase; }
+        .factor-bar-bg { flex: 1; height: 6px; background: #1E222D; }
+        .factor-bar-fill { height: 100%; transition: width 0.8s ease-out; }
+        .factor-val { width: 30px; text-align: right; font-weight: 700; color: #E0E3EA; }
+
+        /* Sentiment */
+        .sent-badge {
+          display: inline-block;
+          padding: 6px 14px;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 13px;
+          font-weight: 800;
+          letter-spacing: 1px;
+          margin-bottom: 16px;
+        }
+        .sent-bullish { background: rgba(0,200,83,0.15); color: #00C853; border: 1px solid rgba(0,200,83,0.3); }
+        .sent-bearish { background: rgba(213,0,0,0.15); color: #D50000; border: 1px solid rgba(213,0,0,0.3); }
+        .sent-neutral { background: rgba(255,214,0,0.15); color: #FFD600; border: 1px solid rgba(255,214,0,0.3); }
+
+        .sent-conf { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #787B86; margin-bottom: 16px; }
+        .sent-conf strong { color: #E0E3EA; }
+        .sent-section-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #2962FF; text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 6px; }
+        .sent-list { list-style: none; padding: 0; }
+        .sent-list li { font-size: 12px; color: #B2B5BE; padding: 3px 0; font-family: 'Inter', sans-serif; }
+        .sent-list li::before { content: '▸ '; color: #787B86; }
+
       `}</style>
 
       {/* Top Application Bar */}
@@ -667,19 +883,33 @@ export default function App() {
                   <div className="matrix-bar-fill" style={{ width: `${progress}%` }}></div>
                 </div>
                 <div className="matrix-logs">
+                  {/* Live data phase */}
+                  <div className={`matrix-log-item ${activeSection > 0 ? 'log-done' : activeSection === 0 ? 'log-active' : 'log-wait'}`}>
+                    <span>[0] FETCH_LIVE_MARKET_DATA</span>
+                    <span>{activeSection > 0 ? '100%' : 'FETCHING...'}</span>
+                  </div>
                   {SECTIONS.map((sec, i) => {
                     let status = "0%";
-                    let className = "log-wait";
-                    if (i < activeSection) { status = "100%"; className = "log-done"; }
-                    else if (i === activeSection) { status = "FETCHING..."; className = "log-active"; }
-
+                    let cn = "log-wait";
+                    if (i < activeSection) { status = "100%"; cn = "log-done"; }
+                    else if (i === activeSection) { status = "FETCHING..."; cn = "log-active"; }
                     return (
-                      <div key={sec} className={`matrix-log-item ${className}`}>
-                        <span>[{i + 1}/{SECTIONS.length}] REQ_{sec.replace(/\s+/g, '_').toUpperCase()}</span>
+                      <div key={sec} className={`matrix-log-item ${cn}`}>
+                        <span>[{i + 1}/{SECTIONS.length + 2}] REQ_{sec.replace(/\s+/g, '_').toUpperCase()}</span>
                         <span>{status}</span>
                       </div>
                     );
                   })}
+                  {/* Alpha Score phase */}
+                  <div className={`matrix-log-item ${activeSection > SECTIONS.length ? 'log-done' : activeSection === SECTIONS.length ? 'log-active' : 'log-wait'}`}>
+                    <span>[{SECTIONS.length + 1}] COMPUTE_ALPHA_SCORE</span>
+                    <span>{activeSection > SECTIONS.length ? '100%' : activeSection === SECTIONS.length ? 'COMPUTING...' : '0%'}</span>
+                  </div>
+                  {/* Sentiment phase */}
+                  <div className={`matrix-log-item ${activeSection > SECTIONS.length + 1 ? 'log-done' : activeSection === SECTIONS.length + 1 ? 'log-active' : 'log-wait'}`}>
+                    <span>[{SECTIONS.length + 2}] ANALYZE_SENTIMENT</span>
+                    <span>{activeSection > SECTIONS.length + 1 ? '100%' : activeSection === SECTIONS.length + 1 ? 'ANALYZING...' : '0%'}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -692,11 +922,136 @@ export default function App() {
                 <div className="export-info">
                   SYM_{query.toUpperCase()}
                   <span>{queryType === 'stock' ? 'EQUITY ANALYSIS' : 'SECTOR ANALYSIS'}</span>
+                  {liveData && <span style={{ color: parseFloat(liveData.changePct) >= 0 ? '#00C853' : '#D50000' }}>{liveData.currency} {liveData.price} ({liveData.changePct}%)</span>}
                 </div>
                 <button className="btn-export" onClick={downloadPDF} disabled={pdfLoading}>
                   {pdfLoading ? "EXPORTING..." : "[ EXPORT_HTML ]"}
                 </button>
               </div>
+
+              {/* Live Market Data Banner */}
+              {liveData && (
+                <div className="live-banner">
+                  <div className="live-item">
+                    <div className="live-label">PRICE</div>
+                    <div className="live-value">{liveData.currency} {liveData.price}</div>
+                    <div className={`live-change ${parseFloat(liveData.changePct) >= 0 ? 'up' : 'down'}`}>
+                      {parseFloat(liveData.changePct) >= 0 ? '▲' : '▼'} {liveData.change} ({liveData.changePct}%)
+                    </div>
+                  </div>
+                  <div className="live-item">
+                    <div className="live-label">52W HIGH</div>
+                    <div className="live-value">{liveData.high52}</div>
+                  </div>
+                  <div className="live-item">
+                    <div className="live-label">52W LOW</div>
+                    <div className="live-value">{liveData.low52}</div>
+                  </div>
+                  <div className="live-item">
+                    <div className="live-label">SMA-20</div>
+                    <div className="live-value">{liveData.sma20 || 'N/A'}</div>
+                  </div>
+                  <div className="live-item">
+                    <div className="live-label">SMA-5</div>
+                    <div className="live-value">{liveData.sma5 || 'N/A'}</div>
+                  </div>
+                  <div className="live-item">
+                    <div className="live-label">VOLUME</div>
+                    <div className="live-value">{liveData.volume ? liveData.volume.toLocaleString() : 'N/A'}</div>
+                  </div>
+                  <div className="live-item">
+                    <div className="live-label">EXCHANGE</div>
+                    <div className="live-value">{liveData.exchange}</div>
+                  </div>
+                  <div className="live-item">
+                    <div className="live-label">MKT STATE</div>
+                    <div className="live-value">{liveData.marketState}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Alpha Score + Sentiment Row */}
+              {(alphaScore || sentiment) && (
+                <div className="score-row">
+                  {/* Alpha Score Card */}
+                  {alphaScore && (() => {
+                    const score = alphaScore.overall || 50;
+                    const circ = 2 * Math.PI * 48;
+                    const offset = circ - (score / 100) * circ;
+                    const ringColor = score >= 70 ? '#00C853' : score >= 40 ? '#FFD600' : '#D50000';
+                    const r = alphaScore.rating || '';
+                    const rClass = r.includes('BUY') || r.includes('OVERWEIGHT') ? 'rating-buy' : r.includes('SELL') || r.includes('UNDERWEIGHT') ? 'rating-sell' : 'rating-hold';
+                    const factors = [
+                      { name: 'Value', val: alphaScore.value, color: '#2962FF' },
+                      { name: 'Growth', val: alphaScore.growth, color: '#00BFA5' },
+                      { name: 'Momentum', val: alphaScore.momentum, color: '#AA00FF' },
+                      { name: 'Profit', val: alphaScore.profitability, color: '#FF6D00' },
+                      { name: 'Risk', val: 100 - (alphaScore.risk || 50), color: '#D50000' },
+                    ];
+                    return (
+                      <div className="alpha-card">
+                        <div className="score-title">ALPHA SCORE ENGINE</div>
+                        <div className="ring-container">
+                          <div className="score-ring">
+                            <svg width="120" height="120" viewBox="0 0 120 120">
+                              <circle className="ring-bg" cx="60" cy="60" r="48" />
+                              <circle className="ring-fill" cx="60" cy="60" r="48" stroke={ringColor} strokeDasharray={circ} strokeDashoffset={offset} />
+                            </svg>
+                            <div className="ring-text">
+                              <span className="ring-number">{score}</span>
+                              <span className="ring-label">ALPHA</span>
+                            </div>
+                          </div>
+                          <div className="alpha-details">
+                            <div className={`alpha-rating ${rClass}`}>{r}</div>
+                            {alphaScore.target && <div className="alpha-target">12M TARGET: {alphaScore.target}</div>}
+                            {alphaScore.summary && <div className="alpha-summary">{alphaScore.summary}</div>}
+                          </div>
+                        </div>
+                        <div className="factor-bars">
+                          {factors.map(f => (
+                            <div key={f.name} className="factor-row">
+                              <span className="factor-name">{f.name}</span>
+                              <div className="factor-bar-bg"><div className="factor-bar-fill" style={{ width: `${f.val || 0}%`, background: f.color }}></div></div>
+                              <span className="factor-val">{f.val || 0}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Sentiment Card */}
+                  {sentiment && (() => {
+                    const s = sentiment.sentiment || 'NEUTRAL';
+                    const sClass = s.includes('BULL') ? 'sent-bullish' : s.includes('BEAR') ? 'sent-bearish' : 'sent-neutral';
+                    return (
+                      <div className="sentiment-card">
+                        <div className="score-title">MARKET SENTIMENT ANALYSIS</div>
+                        <div className={`sent-badge ${sClass}`}>{s.replace(/_/g, ' ')}</div>
+                        <div className="sent-conf">CONFIDENCE: <strong>{sentiment.confidence || 0}%</strong> &nbsp;|&nbsp; NEWS SCORE: <strong>{sentiment.newsScore || 0}/100</strong></div>
+                        {sentiment.catalysts && sentiment.catalysts.length > 0 && (
+                          <>
+                            <div className="sent-section-title">CATALYSTS</div>
+                            <ul className="sent-list">
+                              {sentiment.catalysts.map((c, i) => <li key={i}>{c}</li>)}
+                            </ul>
+                          </>
+                        )}
+                        {sentiment.risks && sentiment.risks.length > 0 && (
+                          <>
+                            <div className="sent-section-title">KEY RISKS</div>
+                            <ul className="sent-list">
+                              {sentiment.risks.map((r, i) => <li key={i}>{r}</li>)}
+                            </ul>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               <div className="data-grid">
                 {SECTIONS.map((section, i) => (
                   <div key={section} className="data-card">
