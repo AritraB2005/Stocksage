@@ -195,7 +195,7 @@ Keep responses SHORT and STRUCTURED. No long paragraphs. Maximum 8-10 lines per 
               },
               { role: "user", content: prompt }
             ],
-            max_tokens: 800,
+            max_tokens: 2048,
             temperature: 0.6
           })
         });
@@ -353,7 +353,13 @@ LIVE MARKET DATA (use these EXACT numbers in your analysis):
     setActiveSection(0);
     setProgress(0);
 
-    const totalSteps = SECTIONS.length + 3; // +1 live data, +1 alpha, +1 sentiment
+    // Batch sections into 3 groups to minimize API calls
+    const batches = [
+      ["Company Overview", "Market Cap & Valuation", "Technical Analysis"],
+      ["Entry Price Strategy", "Peer Comparison", "Sector Analysis"],
+      ["Risk Assessment", "Investment Verdict"],
+    ];
+    const totalSteps = batches.length + 2; // +1 live data, +1 alpha+sentiment
 
     try {
       // PHASE 0: Fetch live market data (RAG)
@@ -365,53 +371,85 @@ LIVE MARKET DATA (use these EXACT numbers in your analysis):
       }
       setProgress((1 / totalSteps) * 100);
 
-      // PHASE 1: Run all 8 section analyses with live data injection
+      // PHASE 1-3: Run batched section analyses
       const results = {};
-      for (let i = 0; i < SECTIONS.length; i++) {
-        setActiveSection(i);
-        setProgress(((i + 1) / totalSteps) * 100);
-        const prompt = getSectionPrompt(SECTIONS[i], query.trim(), queryType, live);
-        results[SECTIONS[i]] = await callGroq(prompt);
-        if (i < SECTIONS.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 4000));
+      for (let b = 0; b < batches.length; b++) {
+        const batch = batches[b];
+        setActiveSection(b * 3); // approximate section index for UI
+        setProgress(((b + 1) / totalSteps) * 100);
+
+        // Build a combined prompt for all sections in this batch
+        const batchPrompts = batch.map(sec => {
+          const p = getSectionPrompt(sec, query.trim(), queryType, live);
+          return `=== SECTION: ${sec} ===\n${p}`;
+        }).join('\n\n');
+
+        const combinedPrompt = `Analyze the following sections. Output each section separately, starting each with the exact marker "=== SECTION: SectionName ===" on its own line. Keep each section concise (6-8 lines max).\n\n${batchPrompts}`;
+
+        const rawResponse = await callGroq(combinedPrompt);
+
+        // Split the combined response back into individual sections
+        for (const sec of batch) {
+          const marker = `=== SECTION: ${sec} ===`;
+          const idx = rawResponse.indexOf(marker);
+          if (idx !== -1) {
+            // Find the end — next marker or end of string
+            let endIdx = rawResponse.length;
+            for (const otherSec of batch) {
+              if (otherSec === sec) continue;
+              const otherMarker = `=== SECTION: ${otherSec} ===`;
+              const otherIdx = rawResponse.indexOf(otherMarker);
+              if (otherIdx > idx && otherIdx < endIdx) endIdx = otherIdx;
+            }
+            results[sec] = rawResponse.slice(idx + marker.length, endIdx).trim();
+          } else {
+            // Fallback: if markers aren't found, dump entire response into first section
+            if (sec === batch[0]) results[sec] = rawResponse;
+            else results[sec] = "Analysis included in previous section.";
+          }
+        }
+
+        if (b < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 8000));
         }
       }
 
-      // PHASE 2: Alpha Score (quantitative rubric)
+      // PHASE 4: Alpha Score + Sentiment (combined into 1 call)
       setActiveSection(SECTIONS.length);
-      setProgress(((SECTIONS.length + 1) / totalSteps) * 100);
-      await new Promise(resolve => setTimeout(resolve, 4000));
-      const alphaPrompt = queryType === "stock"
-        ? `You are a quantitative analyst. Score the stock ${query.trim()} across these 5 factors. ${live ? `Current price: ${live.price}, 52W High: ${live.high52}, 52W Low: ${live.low52}, SMA20: ${live.sma20}.` : ''}
-Return ONLY a valid JSON object with no extra text, like this exact format:
-{"value":72,"growth":65,"momentum":80,"profitability":58,"risk":45,"overall":64,"rating":"BUY","target":"250.00","summary":"One sentence thesis"}
-Each score must be 0-100. Rating must be one of: STRONG BUY, BUY, HOLD, SELL, STRONG SELL. Target is 12-month price target.`
-        : `Score the ${query.trim()} sector across 5 factors. Return ONLY valid JSON: {"value":70,"growth":65,"momentum":60,"profitability":55,"risk":40,"overall":58,"rating":"OVERWEIGHT","target":"N/A","summary":"One sentence thesis"}`;
-      try {
-        const alphaRaw = await callGroq(alphaPrompt);
-        const jsonMatch = alphaRaw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          setAlphaScore(JSON.parse(jsonMatch[0]));
-        }
-      } catch (e) { console.warn("Alpha score parse failed", e); }
+      setProgress(((batches.length + 1) / totalSteps) * 100);
+      await new Promise(resolve => setTimeout(resolve, 8000));
 
-      // PHASE 3: News Sentiment
-      setActiveSection(SECTIONS.length + 1);
-      setProgress(((SECTIONS.length + 2) / totalSteps) * 100);
-      await new Promise(resolve => setTimeout(resolve, 4000));
-      const sentimentPrompt = `Analyze the current market sentiment for ${queryType === "stock" ? `stock ${query.trim()}` : `the ${query.trim()} sector`}. ${live ? `It is currently trading at ${live.price} (${live.changePct}% change).` : ''}
-Consider recent news, earnings, macro trends, and market conditions.
-Return ONLY a valid JSON object: {"sentiment":"BULLISH","confidence":75,"catalysts":["Catalyst 1","Catalyst 2","Catalyst 3"],"risks":["Risk 1","Risk 2"],"newsScore":72}
-sentiment must be one of: VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH. confidence and newsScore are 0-100.`;
-      try {
-        const sentRaw = await callGroq(sentimentPrompt);
-        const jsonM = sentRaw.match(/\{[\s\S]*\}/);
-        if (jsonM) {
-          setSentiment(JSON.parse(jsonM[0]));
-        }
-      } catch (e) { console.warn("Sentiment parse failed", e); }
+      const comboPrompt = `Perform TWO tasks for ${queryType === "stock" ? `stock ${query.trim()}` : `the ${query.trim()} sector`}. ${live ? `Current price: ${live.price}, 52W High: ${live.high52}, 52W Low: ${live.low52}.` : ''}
 
-      setActiveSection(totalSteps);
+TASK 1 - ALPHA SCORE: Score across 5 factors (value, growth, momentum, profitability, risk) each 0-100. Output as:
+ALPHA_JSON: {"value":72,"growth":65,"momentum":80,"profitability":58,"risk":45,"overall":64,"rating":"BUY","target":"250.00","summary":"One sentence thesis"}
+
+TASK 2 - SENTIMENT: Analyze market sentiment. Output as:
+SENTIMENT_JSON: {"sentiment":"BULLISH","confidence":75,"catalysts":["C1","C2","C3"],"risks":["R1","R2"],"newsScore":72}
+
+Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: respectively. No other text.`;
+
+      try {
+        const comboRaw = await callGroq(comboPrompt);
+        // Parse Alpha Score
+        const alphaMatch = comboRaw.match(/ALPHA_JSON:\s*(\{[\s\S]*?\})/);
+        if (alphaMatch) {
+          setAlphaScore(JSON.parse(alphaMatch[1]));
+        } else {
+          const jsonM = comboRaw.match(/\{[\s\S]*?"overall"[\s\S]*?\}/);
+          if (jsonM) setAlphaScore(JSON.parse(jsonM[0]));
+        }
+        // Parse Sentiment
+        const sentMatch = comboRaw.match(/SENTIMENT_JSON:\s*(\{[\s\S]*?\})/);
+        if (sentMatch) {
+          setSentiment(JSON.parse(sentMatch[1]));
+        } else {
+          const jsonS = comboRaw.match(/\{[\s\S]*?"sentiment"[\s\S]*?\}/);
+          if (jsonS) setSentiment(JSON.parse(jsonS[0]));
+        }
+      } catch (e) { console.warn("Alpha/Sentiment parse failed", e); }
+
+      setActiveSection(totalSteps + SECTIONS.length);
       setProgress(100);
       setAnalysisData(results);
     } catch (e) {
