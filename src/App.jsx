@@ -485,14 +485,70 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
         body, html {
-          background-color: #0E1015; /* TradingView/Bloomberg dark */
+          background-color: #0E1015;
           color: #D1D4DC;
           font-family: 'Inter', -apple-system, sans-serif;
           height: 100vh;
-          overflow: hidden; /* App container handles scrolling */
+          width: 100vw;
+          overflow: hidden;
         }
 
-        /* Scrollbar styles to look like a terminal */
+        /* ===== ANIMATION KEYFRAMES ===== */
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideInLeft {
+          from { opacity: 0; transform: translateX(-30px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(30px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes glowPulse {
+          0%, 100% { text-shadow: 0 0 8px rgba(41,98,255,0.4), 0 0 20px rgba(41,98,255,0.1); }
+          50% { text-shadow: 0 0 16px rgba(41,98,255,0.8), 0 0 40px rgba(41,98,255,0.3); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        @keyframes floatY {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-8px); }
+        }
+        @keyframes borderGlow {
+          0%, 100% { border-color: #2A2E39; box-shadow: none; }
+          50% { border-color: rgba(41,98,255,0.4); box-shadow: 0 0 12px rgba(41,98,255,0.1); }
+        }
+        @keyframes cursorBlink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.92); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes ripple {
+          0% { box-shadow: 0 0 0 0 rgba(41,98,255,0.3); }
+          100% { box-shadow: 0 0 0 12px rgba(41,98,255,0); }
+        }
+        @keyframes statusPulse {
+          0%, 100% { box-shadow: 0 0 4px #00BFA5; }
+          50% { box-shadow: 0 0 12px #00BFA5, 0 0 24px rgba(0,191,165,0.3); }
+        }
+
+        /* Scrollbar styles */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #0E1015; border-left: 1px solid #2A2E39; }
         ::-webkit-scrollbar-thumb { background: #434651; border-radius: 0; }
@@ -505,6 +561,9 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           flex-direction: column;
           height: 100vh;
           width: 100vw;
+          max-height: 100vh;
+          max-width: 100vw;
+          overflow: hidden;
           background-color: #0E1015;
         }
 
@@ -516,10 +575,12 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           background: #131722;
           border-bottom: 1px solid #2A2E39;
           padding: 0 16px;
-          height: 50px;
+          height: 48px;
+          min-height: 48px;
           flex-shrink: 0;
           font-family: 'JetBrains Mono', monospace;
           font-size: 12px;
+          animation: fadeIn 0.6s ease-out;
         }
 
         .sys-logo {
@@ -529,8 +590,11 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           align-items: center;
           gap: 8px;
           letter-spacing: 1px;
+          animation: glowPulse 3s ease-in-out infinite;
+          cursor: default;
+          transition: transform 0.3s ease;
         }
-        
+        .sys-logo:hover { transform: scale(1.05); }
         .sys-logo span { color: #E0E3EA; }
 
         .sys-clock {
@@ -538,6 +602,7 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           display: flex;
           align-items: center;
           gap: 16px;
+          animation: fadeIn 1s ease-out 0.3s both;
         }
         
         .sys-status {
@@ -553,7 +618,7 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           height: 6px;
           background: #00BFA5;
           border-radius: 50%;
-          box-shadow: 0 0 8px #00BFA5;
+          animation: statusPulse 2s ease-in-out infinite;
         }
 
         /* Main Workspace layout */
@@ -561,18 +626,20 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           display: flex;
           flex: 1;
           overflow: hidden;
+          min-height: 0;
         }
 
         /* Left Side Panel (Command/Query form) */
         .cmd-panel {
-          width: 320px;
+          width: 300px;
           background: #131722;
           border-right: 1px solid #2A2E39;
           display: flex;
           flex-direction: column;
-          padding: 20px;
+          padding: 16px;
           flex-shrink: 0;
           overflow-y: auto;
+          animation: slideInLeft 0.5s ease-out;
         }
 
         @media (max-width: 900px) {
@@ -586,9 +653,10 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           font-size: 11px;
           text-transform: uppercase;
           letter-spacing: 1px;
-          margin-bottom: 16px;
+          margin-bottom: 14px;
           border-bottom: 1px dashed #2A2E39;
           padding-bottom: 8px;
+          animation: fadeInUp 0.5s ease-out 0.2s both;
         }
 
         /* Form elements */
@@ -608,10 +676,15 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           font-family: 'JetBrains Mono', monospace;
           font-size: 14px;
           padding: 10px 12px;
-          margin-bottom: 20px;
-          transition: border-color 0.2s;
+          margin-bottom: 16px;
+          transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+          animation: fadeInUp 0.5s ease-out 0.3s both;
         }
-        .cmd-input:focus { border-color: #2962FF; box-shadow: inset 0 0 0 1px rgba(41,98,255,0.5); }
+        .cmd-input:focus { 
+          border-color: #2962FF; 
+          box-shadow: inset 0 0 0 1px rgba(41,98,255,0.5), 0 0 20px rgba(41,98,255,0.1);
+          transform: scale(1.01);
+        }
         .cmd-input::placeholder { color: #434651; }
 
         .type-toggle {
@@ -639,7 +712,8 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           display: flex;
           flex-wrap: wrap;
           gap: 6px;
-          margin-bottom: 24px;
+          margin-bottom: 20px;
+          animation: fadeInUp 0.5s ease-out 0.5s both;
         }
         .cmd-chip {
           background: #1E222D;
@@ -649,12 +723,22 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           font-size: 10px;
           padding: 4px 8px;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.25s ease;
+          position: relative;
+          overflow: hidden;
         }
-        .cmd-chip:hover { border-color: #2962FF; color: #E0E3EA; }
+        .cmd-chip:hover { 
+          border-color: #2962FF; 
+          color: #E0E3EA; 
+          background: rgba(41,98,255,0.1);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(41,98,255,0.15);
+        }
+        .cmd-chip:active { transform: translateY(0) scale(0.97); }
 
         .cmd-execute {
-          background: #2962FF;
+          background: linear-gradient(135deg, #2962FF, #1E88E5);
+          background-size: 200% 200%;
           color: #fff;
           border: none;
           font-family: 'JetBrains Mono', monospace;
@@ -663,10 +747,28 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           padding: 12px;
           width: 100%;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: all 0.3s ease;
           text-transform: uppercase;
+          position: relative;
+          overflow: hidden;
+          animation: fadeInUp 0.5s ease-out 0.6s both;
         }
-        .cmd-execute:hover:not(:disabled) { background: #1E4BD8; }
+        .cmd-execute::after {
+          content: '';
+          position: absolute;
+          top: -50%; left: -50%;
+          width: 200%; height: 200%;
+          background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+          transform: rotate(45deg) translateX(-100%);
+          transition: transform 0.6s;
+        }
+        .cmd-execute:hover:not(:disabled)::after { transform: rotate(45deg) translateX(100%); }
+        .cmd-execute:hover:not(:disabled) { 
+          background: linear-gradient(135deg, #1E4BD8, #1565C0);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 20px rgba(41,98,255,0.4);
+        }
+        .cmd-execute:active:not(:disabled) { transform: translateY(0) scale(0.98); }
         .cmd-execute:disabled { background: #2A2E39; color: #787B86; cursor: not-allowed; }
 
         .cmd-error {
@@ -682,11 +784,14 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
         /* Right Side Panels (Results) */
         .data-panel {
           flex: 1;
+          min-width: 0;
           background: #0E1015;
           position: relative;
           overflow-y: auto;
+          overflow-x: hidden;
           display: flex;
           flex-direction: column;
+          animation: slideInRight 0.5s ease-out;
         }
 
         /* Loading / Progress State */
@@ -711,6 +816,17 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           width: 100%;
           max-width: 500px;
           background: #131722;
+          animation: scaleIn 0.5s ease-out, borderGlow 3s ease-in-out infinite;
+          position: relative;
+          overflow: hidden;
+        }
+        .matrix-box::before {
+          content: '';
+          position: absolute;
+          top: 0; left: -100%;
+          width: 50%; height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(41,98,255,0.05), transparent);
+          animation: shimmer 2s ease-in-out infinite;
         }
         
         .matrix-header {
@@ -722,11 +838,26 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           animation: pulseMatrix 1.5s infinite;
         }
 
-        .matrix-bar-bg { width: 100%; height: 6px; background: #1E222D; margin-bottom: 16px; }
-        .matrix-bar-fill { height: 100%; background: #2962FF; transition: width 0.3s; }
+        .matrix-bar-bg { width: 100%; height: 6px; background: #1E222D; margin-bottom: 16px; border-radius: 3px; overflow: hidden; position: relative; }
+        .matrix-bar-fill { 
+          height: 100%; 
+          background: linear-gradient(90deg, #2962FF, #00BFA5, #2962FF);
+          background-size: 200% 100%;
+          animation: gradientShift 2s ease-in-out infinite;
+          transition: width 0.5s ease-out;
+          border-radius: 3px;
+          position: relative;
+        }
+        .matrix-bar-fill::after {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+          animation: shimmer 1.5s ease-in-out infinite;
+        }
         
         .matrix-logs { font-size: 11px; color: #B2B5BE; }
-        .matrix-log-item { margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .matrix-log-item { margin-bottom: 4px; display: flex; justify-content: space-between; animation: fadeIn 0.3s ease-out both; }
         .log-done { color: #00BFA5; }
         .log-wait { color: #787B86; }
         .log-active { color: #2962FF; animation: pulseMatrix 1s infinite; }
@@ -735,8 +866,8 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
         .data-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
-          gap: 16px;
-          padding: 16px;
+          gap: 14px;
+          padding: 14px;
         }
         
         @media (max-width: 1200px) {
@@ -748,6 +879,21 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           border: 1px solid #2A2E39;
           display: flex;
           flex-direction: column;
+          animation: fadeInUp 0.6s ease-out both;
+          transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+        }
+        .data-card:nth-child(1) { animation-delay: 0.05s; }
+        .data-card:nth-child(2) { animation-delay: 0.1s; }
+        .data-card:nth-child(3) { animation-delay: 0.15s; }
+        .data-card:nth-child(4) { animation-delay: 0.2s; }
+        .data-card:nth-child(5) { animation-delay: 0.25s; }
+        .data-card:nth-child(6) { animation-delay: 0.3s; }
+        .data-card:nth-child(7) { animation-delay: 0.35s; }
+        .data-card:nth-child(8) { animation-delay: 0.4s; }
+        .data-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 8px 30px rgba(0,0,0,0.3), 0 0 15px rgba(41,98,255,0.08);
+          border-color: rgba(41,98,255,0.3);
         }
 
         .dc-header {
@@ -762,43 +908,306 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           font-weight: 700;
           color: #D1D4DC;
           text-transform: uppercase;
+          transition: background 0.3s;
         }
+        .data-card:hover .dc-header { background: #252a37; }
 
         .dc-body {
-          padding: 16px;
+          padding: 14px;
           font-size: 13px;
           line-height: 1.6;
           color: #B2B5BE;
           white-space: pre-wrap;
           font-family: 'Inter', sans-serif;
-          height: 100%;
+          flex: 1;
         }
 
         .dc-body strong { color: #E0E3EA; font-weight: 600; }
         .dc-body span.ticker { color: #2962FF; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
 
-        /* Welcome screen */
+        /* ===== WELCOME SCREEN REDESIGN ===== */
         .welcome-screen {
           flex: 1;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          color: #434651;
           font-family: 'JetBrains Mono', monospace;
-          font-size: 12px;
           text-align: center;
+          position: relative;
+          overflow: hidden;
+          background: radial-gradient(ellipse at 50% 50%, rgba(41,98,255,0.04) 0%, transparent 70%);
         }
-        .welcome-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.2; }
+
+        /* Animated grid background */
+        .welcome-grid {
+          position: absolute;
+          inset: 0;
+          background-image:
+            linear-gradient(rgba(41,98,255,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(41,98,255,0.04) 1px, transparent 1px);
+          background-size: 60px 60px;
+          animation: fadeIn 2s ease-out;
+          mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+          -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+        }
+
+        /* Scanning line */
+        @keyframes scanLine {
+          0% { top: -2px; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; }
+        }
+        .welcome-scan {
+          position: absolute;
+          left: 0; right: 0;
+          height: 2px;
+          background: linear-gradient(90deg, transparent, #2962FF, rgba(41,98,255,0.6), #2962FF, transparent);
+          animation: scanLine 4s ease-in-out infinite;
+          box-shadow: 0 0 15px rgba(41,98,255,0.5), 0 0 40px rgba(41,98,255,0.2);
+          z-index: 1;
+        }
+
+        /* Floating particles */
+        @keyframes particleFloat {
+          0%, 100% { transform: translateY(0) translateX(0); opacity: 0.3; }
+          25% { transform: translateY(-20px) translateX(10px); opacity: 0.7; }
+          50% { transform: translateY(-40px) translateX(-5px); opacity: 0.4; }
+          75% { transform: translateY(-20px) translateX(15px); opacity: 0.8; }
+        }
+        .welcome-particles {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          z-index: 0;
+        }
+        .particle {
+          position: absolute;
+          width: 3px;
+          height: 3px;
+          background: #2962FF;
+          border-radius: 50%;
+          animation: particleFloat 6s ease-in-out infinite;
+          box-shadow: 0 0 6px rgba(41,98,255,0.5);
+        }
+
+        /* Main content wrapper */
+        .welcome-content {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+        }
+
+        /* Radar ring behind logo */
+        @keyframes radarSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes radarPulse {
+          0%, 100% { transform: scale(1); opacity: 0.15; }
+          50% { transform: scale(1.15); opacity: 0.3; }
+        }
+        .welcome-radar {
+          position: relative;
+          width: 140px;
+          height: 140px;
+          margin-bottom: 8px;
+          animation: scaleIn 0.8s ease-out;
+        }
+        .radar-ring {
+          position: absolute;
+          inset: 0;
+          border: 1px solid rgba(41,98,255,0.15);
+          border-radius: 50%;
+          animation: radarPulse 3s ease-in-out infinite;
+        }
+        .radar-ring:nth-child(2) {
+          inset: 15px;
+          animation-delay: 0.5s;
+          border-color: rgba(41,98,255,0.1);
+        }
+        .radar-ring:nth-child(3) {
+          inset: 30px;
+          animation-delay: 1s;
+          border-color: rgba(41,98,255,0.08);
+        }
+        .radar-sweep {
+          position: absolute;
+          top: 50%; left: 50%;
+          width: 50%;
+          height: 2px;
+          background: linear-gradient(90deg, #2962FF, transparent);
+          transform-origin: left center;
+          animation: radarSpin 4s linear infinite;
+          box-shadow: 0 0 10px rgba(41,98,255,0.4);
+        }
+        .radar-center {
+          position: absolute;
+          top: 50%; left: 50%;
+          transform: translate(-50%, -50%);
+          font-size: 36px;
+          filter: drop-shadow(0 0 20px rgba(41,98,255,0.5));
+          animation: floatY 3s ease-in-out infinite;
+        }
+
+        /* Logo text */
+        .welcome-brand {
+          font-size: 28px;
+          font-weight: 800;
+          letter-spacing: 3px;
+          color: #E0E3EA;
+          animation: fadeInUp 0.6s ease-out 0.3s both;
+          text-shadow: 0 0 30px rgba(41,98,255,0.3);
+        }
+        .welcome-brand .brand-accent { color: #2962FF; }
+
+        .welcome-tagline {
+          font-size: 11px;
+          color: #787B86;
+          letter-spacing: 4px;
+          text-transform: uppercase;
+          animation: fadeInUp 0.6s ease-out 0.5s both;
+          margin-bottom: 16px;
+        }
+
+        /* Animated stock chart SVG */
+        @keyframes drawChart {
+          from { stroke-dashoffset: 600; }
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes chartGlow {
+          0%, 100% { filter: drop-shadow(0 0 3px rgba(0,200,83,0.3)); }
+          50% { filter: drop-shadow(0 0 8px rgba(0,200,83,0.6)); }
+        }
+        .welcome-chart {
+          width: 320px;
+          height: 80px;
+          margin-bottom: 20px;
+          animation: fadeIn 0.8s ease-out 0.7s both, chartGlow 3s ease-in-out infinite;
+        }
+        .chart-line {
+          fill: none;
+          stroke: #00C853;
+          stroke-width: 2;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          stroke-dasharray: 600;
+          animation: drawChart 2.5s ease-out 0.8s both;
+        }
+        .chart-area {
+          animation: fadeIn 1.5s ease-out 2s both;
+        }
+        .chart-grid-line {
+          stroke: rgba(42,46,57,0.5);
+          stroke-width: 0.5;
+          stroke-dasharray: 4 4;
+        }
+        .chart-dot {
+          animation: fadeIn 0.3s ease-out both;
+        }
+
+        /* Feature badges row */
+        .welcome-features {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          justify-content: center;
+          margin-bottom: 20px;
+        }
+        .feature-badge {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(30,34,45,0.8);
+          border: 1px solid #2A2E39;
+          padding: 6px 14px;
+          font-size: 10px;
+          color: #B2B5BE;
+          letter-spacing: 0.5px;
+          animation: fadeInUp 0.5s ease-out both;
+          transition: all 0.3s ease;
+          backdrop-filter: blur(4px);
+        }
+        .feature-badge:nth-child(1) { animation-delay: 0.9s; }
+        .feature-badge:nth-child(2) { animation-delay: 1.0s; }
+        .feature-badge:nth-child(3) { animation-delay: 1.1s; }
+        .feature-badge:nth-child(4) { animation-delay: 1.2s; }
+        .feature-badge:hover {
+          border-color: #2962FF;
+          background: rgba(41,98,255,0.1);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 15px rgba(41,98,255,0.15);
+        }
+        .feature-dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        /* Status line */
+        .welcome-status-line {
+          font-size: 11px;
+          color: #434651;
+          animation: fadeInUp 0.6s ease-out 1.3s both;
+          position: relative;
+        }
+        .welcome-status-line::after {
+          content: '\\2588';
+          animation: cursorBlink 1s step-end infinite;
+          margin-left: 4px;
+          color: #2962FF;
+        }
+
+        /* Scrolling ticker tape */
+        @keyframes tickerScroll {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
+        .welcome-ticker {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 28px;
+          background: rgba(19,23,34,0.9);
+          border-top: 1px solid #2A2E39;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          animation: fadeIn 1s ease-out 1.5s both;
+        }
+        .ticker-track {
+          display: flex;
+          animation: tickerScroll 30s linear infinite;
+          white-space: nowrap;
+        }
+        .ticker-item {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          padding: 0 20px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+        .ticker-symbol { color: #E0E3EA; font-weight: 700; }
+        .ticker-up { color: #00C853; }
+        .ticker-down { color: #D50000; }
 
         /* Export Button */
         .export-bar {
-          padding: 12px 16px;
+          padding: 10px 14px;
           background: #131722;
           border-bottom: 1px solid #2A2E39;
           display: flex;
           justify-content: space-between;
           align-items: center;
+          animation: fadeIn 0.4s ease-out;
         }
         
         .export-info { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #2962FF; font-weight: 700; }
@@ -812,28 +1221,53 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           font-size: 11px;
           padding: 6px 12px;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.3s ease;
+          position: relative;
+          overflow: hidden;
         }
-        .btn-export:hover:not(:disabled) { border-color: #2962FF; color: #2962FF; background: rgba(41,98,255,0.05); }
+        .btn-export:hover:not(:disabled) { 
+          border-color: #2962FF; 
+          color: #2962FF; 
+          background: rgba(41,98,255,0.08);
+          box-shadow: 0 0 15px rgba(41,98,255,0.15);
+          transform: translateY(-1px);
+        }
+        .btn-export:active:not(:disabled) { transform: scale(0.97); }
         .btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Live Data Banner */
         .live-banner {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-          gap: 12px;
-          padding: 16px;
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+          gap: 10px;
+          padding: 12px;
           background: #131722;
           border-bottom: 1px solid #2A2E39;
+          animation: fadeIn 0.5s ease-out;
         }
         .live-item {
-          padding: 10px 12px;
+          padding: 8px 10px;
           background: #1E222D;
           border: 1px solid #2A2E39;
           font-family: 'JetBrains Mono', monospace;
+          animation: fadeInUp 0.4s ease-out both;
+          transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
         }
-        .live-label { font-size: 9px; color: #787B86; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-        .live-value { font-size: 16px; font-weight: 700; color: #E0E3EA; }
+        .live-item:nth-child(1) { animation-delay: 0.05s; }
+        .live-item:nth-child(2) { animation-delay: 0.1s; }
+        .live-item:nth-child(3) { animation-delay: 0.15s; }
+        .live-item:nth-child(4) { animation-delay: 0.2s; }
+        .live-item:nth-child(5) { animation-delay: 0.25s; }
+        .live-item:nth-child(6) { animation-delay: 0.3s; }
+        .live-item:nth-child(7) { animation-delay: 0.35s; }
+        .live-item:nth-child(8) { animation-delay: 0.4s; }
+        .live-item:hover {
+          transform: translateY(-2px);
+          border-color: rgba(41,98,255,0.3);
+          box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+        .live-label { font-size: 9px; color: #787B86; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+        .live-value { font-size: 14px; font-weight: 700; color: #E0E3EA; }
         .live-change { font-size: 11px; margin-top: 2px; }
         .live-change.up { color: #00C853; }
         .live-change.down { color: #D50000; }
@@ -842,15 +1276,24 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
         .score-row {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
-          padding: 16px;
+          gap: 14px;
+          padding: 14px;
         }
         @media (max-width: 900px) { .score-row { grid-template-columns: 1fr; } }
 
         .alpha-card, .sentiment-card {
           background: #131722;
           border: 1px solid #2A2E39;
-          padding: 20px;
+          padding: 16px;
+          animation: scaleIn 0.5s ease-out both;
+          transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+        }
+        .alpha-card { animation-delay: 0.1s; }
+        .sentiment-card { animation-delay: 0.2s; }
+        .alpha-card:hover, .sentiment-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+          border-color: rgba(41,98,255,0.3);
         }
         .score-title {
           font-family: 'JetBrains Mono', monospace;
@@ -859,7 +1302,7 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
           color: #787B86;
           text-transform: uppercase;
           letter-spacing: 1px;
-          margin-bottom: 16px;
+          margin-bottom: 14px;
           border-bottom: 1px solid #2A2E39;
           padding-bottom: 8px;
         }
@@ -1084,12 +1527,120 @@ Output ONLY the two JSON lines prefixed with ALPHA_JSON: and SENTIMENT_JSON: res
         {/* Right Side Data Display Panel */}
         <div className="data-panel">
 
-          {/* Default Empty State */}
+          {/* Default Empty State — Animated Front Page */}
           {!loading && !analysisData && (
             <div className="welcome-screen">
-              <div className="welcome-icon">◱</div>
-              <div>STOCKSAGE TERMINAL v2.0</div>
-              <div style={{ marginTop: 8 }}>AWAITING INPUT QUERY...</div>
+              {/* Animated grid background */}
+              <div className="welcome-grid" />
+              {/* Scanning line */}
+              <div className="welcome-scan" />
+              {/* Floating particles */}
+              <div className="welcome-particles">
+                {[...Array(12)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="particle"
+                    style={{
+                      left: `${8 + (i * 7.5) % 85}%`,
+                      top: `${15 + (i * 13) % 70}%`,
+                      animationDelay: `${i * 0.5}s`,
+                      animationDuration: `${4 + (i % 3) * 2}s`,
+                      width: `${2 + (i % 3)}px`,
+                      height: `${2 + (i % 3)}px`,
+                      background: i % 3 === 0 ? '#2962FF' : i % 3 === 1 ? '#00BFA5' : '#AA00FF',
+                      boxShadow: `0 0 ${4 + i % 4}px ${i % 3 === 0 ? 'rgba(41,98,255,0.5)' : i % 3 === 1 ? 'rgba(0,191,165,0.5)' : 'rgba(170,0,255,0.5)'}`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              <div className="welcome-content">
+                {/* Radar ring behind logo */}
+                <div className="welcome-radar">
+                  <div className="radar-ring" />
+                  <div className="radar-ring" />
+                  <div className="radar-ring" />
+                  <div className="radar-sweep" />
+                  <div className="radar-center">◱</div>
+                </div>
+
+                <div className="welcome-brand">
+                  <span className="brand-accent">STOCK</span>SAGE
+                </div>
+                <div className="welcome-tagline">AI-Powered Terminal Analytics</div>
+
+                {/* Animated stock chart */}
+                <svg className="welcome-chart" viewBox="0 0 320 80" fill="none">
+                  {/* Grid lines */}
+                  <line className="chart-grid-line" x1="0" y1="20" x2="320" y2="20" />
+                  <line className="chart-grid-line" x1="0" y1="40" x2="320" y2="40" />
+                  <line className="chart-grid-line" x1="0" y1="60" x2="320" y2="60" />
+                  {/* Area fill under chart */}
+                  <path className="chart-area" d="M0,65 L20,58 L45,62 L70,50 L95,55 L120,42 L140,45 L165,35 L190,38 L210,28 L235,32 L255,22 L275,18 L295,24 L320,12 L320,80 L0,80 Z" fill="url(#chartGrad)" />
+                  <defs>
+                    <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="rgba(0,200,83,0.15)" />
+                      <stop offset="100%" stopColor="rgba(0,200,83,0)" />
+                    </linearGradient>
+                  </defs>
+                  {/* Main chart line */}
+                  <polyline
+                    className="chart-line"
+                    points="0,65 20,58 45,62 70,50 95,55 120,42 140,45 165,35 190,38 210,28 235,32 255,22 275,18 295,24 320,12"
+                  />
+                  {/* Endpoint glow dot */}
+                  <circle className="chart-dot" cx="320" cy="12" r="3" fill="#00C853" style={{ animationDelay: '2.8s' }}>
+                    <animate attributeName="r" values="3;5;3" dur="2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
+                  </circle>
+                  <circle className="chart-dot" cx="320" cy="12" r="8" fill="none" stroke="rgba(0,200,83,0.3)" strokeWidth="1" style={{ animationDelay: '2.8s' }}>
+                    <animate attributeName="r" values="6;12;6" dur="2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite" />
+                  </circle>
+                </svg>
+
+                {/* Feature badges */}
+                <div className="welcome-features">
+                  <div className="feature-badge">
+                    <span className="feature-dot" style={{ background: '#00C853' }} />
+                    LIVE DATA
+                  </div>
+                  <div className="feature-badge">
+                    <span className="feature-dot" style={{ background: '#2962FF' }} />
+                    AI ANALYSIS
+                  </div>
+                  <div className="feature-badge">
+                    <span className="feature-dot" style={{ background: '#AA00FF' }} />
+                    ALPHA SCORE
+                  </div>
+                  <div className="feature-badge">
+                    <span className="feature-dot" style={{ background: '#FF6D00' }} />
+                    SENTIMENT
+                  </div>
+                </div>
+
+                <div className="welcome-status-line">SYS_READY — AWAITING INPUT</div>
+              </div>
+
+              {/* Scrolling ticker tape */}
+              <div className="welcome-ticker">
+                <div className="ticker-track">
+                  {[...Array(2)].map((_, setIdx) => (
+                    <React.Fragment key={setIdx}>
+                      <span className="ticker-item"><span className="ticker-symbol">AAPL</span> <span className="ticker-up">▲ 2.34%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">TSLA</span> <span className="ticker-down">▼ 1.12%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">NVDA</span> <span className="ticker-up">▲ 4.56%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">RELIANCE</span> <span className="ticker-up">▲ 0.87%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">TCS</span> <span className="ticker-down">▼ 0.45%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">INFY</span> <span className="ticker-up">▲ 1.23%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">MSFT</span> <span className="ticker-up">▲ 1.67%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">GOOG</span> <span className="ticker-down">▼ 0.89%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">AMZN</span> <span className="ticker-up">▲ 3.21%</span></span>
+                      <span className="ticker-item"><span className="ticker-symbol">META</span> <span className="ticker-up">▲ 2.05%</span></span>
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
